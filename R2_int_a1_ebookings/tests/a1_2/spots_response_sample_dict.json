@@ -1,0 +1,38 @@
+{
+  "SpotPreBookingDetails[0].SpotSalesAreaCode": [
+    "The field SpotSalesAreaCode must be a string with a minimum length of 2 and a maximum length of 2."
+  ],
+  "SpotPreBookingDetails[0].BreakSalesAreaCode": [
+    "The BreakSalesAreaCode field is required."
+  ],
+  "SpotPreBookingDetails[1].SpotSalesAreaCode": [
+    "The field SpotSalesAreaCode must be a string with a minimum length of 2 and a maximum length of 2."
+  ],
+  "SpotPreBookingDetails[1].BreakSalesAreaCode": [
+    "The BreakSalesAreaCode field is required."
+  ],
+  "SpotPreBookingDetails[2].SpotSalesAreaCode": [
+    "The field SpotSalesAreaCode must be a string with a minimum length of 2 and a maximum length of 2."
+  ],
+  "SpotPreBookingDetails[2].BreakSalesAreaCode": [
+    "The BreakSalesAreaCode field is required."
+  ],
+  "SpotPreBookingDetails[3].SpotSalesAreaCode": [
+    "The field SpotSalesAreaCode must be a string with a minimum length of 2 and a maximum length of 2."
+  ],
+  "SpotPreBookingDetails[3].BreakSalesAreaCode": [
+    "The BreakSalesAreaCode field is required."
+  ],
+  "SpotPreBookingDetails[4].SpotSalesAreaCode": [
+    "The field SpotSalesAreaCode must be a string with a minimum length of 2 and a maximum length of 2."
+  ],
+  "SpotPreBookingDetails[4].BreakSalesAreaCode": [
+    "The BreakSalesAreaCode field is required."
+  ],
+  "SpotPreBookingDetails[5].SpotSalesAreaCode": [
+    "The field SpotSalesAreaCode must be a string with a minimum length of 2 and a maximum length of 2."
+  ],
+  "SpotPreBookingDetails[5].BreakSalesAreaCode": [
+    "The BreakSalesAreaCode field is required."
+  ]
+}

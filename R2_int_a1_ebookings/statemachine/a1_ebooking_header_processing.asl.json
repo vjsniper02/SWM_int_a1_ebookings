@@ -1,0 +1,27 @@
+{
+    "Comment": "A1 Validate and process BRQ file from Etrans, upload and create spot bookings in landmark.",
+    "StartAt": "Parse BRQ File",
+    "States": {
+        "Parse BRQ File": {
+            "Type": "Task",
+            "ResultPath": "$",
+            "Retry": [],
+            "Resource": "${ParseBRQFileFunctionArn}",
+            "Next": "Validate BRQ data"
+        },
+        "Validate BRQ data": {
+            "Type": "Task",
+            "ResultPath": "$",
+            "Resource": "${ValidateBRQFileFunctionArn}",
+            "Retry": [],
+            "Next": "Create SF Opp"
+        },
+        "Create SF Opp": {
+            "Type": "Task",
+            "ResultPath": "$",
+            "Resource": "${CreateSfOppFunctionArn}",
+            "Retry": [],
+            "End": true
+        }
+    }
+}

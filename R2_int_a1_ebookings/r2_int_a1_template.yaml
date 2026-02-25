@@ -1,0 +1,1742 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: This integration supports the loading of BRQ files into LMK for eBookings from agencies.
+Globals:
+  Function:
+    Tracing: Active
+    Timeout: 900
+    MemorySize: 1024
+    Layers:
+    - !Sub "{{resolve:ssm:/${EnvPrefix}/lambda-arn/common}}"
+    Environment:
+      Variables:
+        INTEGRATION_NUMBER: "A1"
+        SF_AD_SALES_RECORD_TYPE_NAME: !Sub /${EnvPrefix}/a1/sf/adsalessupport
+        EBOOKINGS_CASE_QUEUE_ID: !Sub /${EnvPrefix}/a1/casequeueid
+        CEE_NOTIFICATION_ENGINE: !Sub "{{resolve:ssm:/${EnvPrefix}/cee/requestReceiverARN}}"
+        LOG_GROUP_NAME: !Sub /aws/seil/${EnvPrefix}/a1
+        SALESFORCE_ADAPTOR: !Ref VarSalesforceAdaptor
+        LANDMARK_ADAPTOR: !Ref VarLMKAdaptor
+        EBOOKINGS_S3_FILEIN_BUCKET: !Sub seil-${EnvPrefix}-ebookings-file-in
+        EBOOKINGS_S3_TEMP_BUCKET: !Sub seil-${EnvPrefix}-ebookings-temp-file
+        EBOOKINGS_S3_ERROR_BUCKET: !Sub seil-${EnvPrefix}-ebookings-error-file
+        SEIL_CONFIG_BUCKET_NAME: !Sub seil-${EnvPrefix}-config
+        SEIL_SALES_AREA_MAPPING_PATH: !Sub s3://seil-${EnvPrefix}-config/sales_area_mapping.csv
+        SEIL_DEMO_MAPPING_FILE: demo_mapping.csv
+        SEIL_SALES_AREA_MAPPING_FILE: sales_area_mapping.csv
+        SEIL_AWS_REGION: ap-southeast-2
+        SPOT_HANDLING_LIMIT: !Sub /${EnvPrefix}/a1/ebooking-spot-handling-limit
+Parameters:
+  EnvPrefix:
+    Type: String
+    Description: Environment Name as Prefix
+    Default: myenvironment
+  VarSalesforceAdaptor:
+    Type: String
+    Description: Salesforce Adaptor SSM name
+    Default: mysfadaptor
+  VarLMKAdaptor:
+    Type: String
+    Description: Landmark Adaptor SSM name
+    Default: mylmkadaptor
+Resources:
+  eBookingsFileBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub seil-${EnvPrefix}-ebookings-file-in
+    LifecycleConfiguration:
+      Rules:
+      - Id: DeleteAfter30Days
+        Status: Enabled
+        ExpirationInDays: 30 # Delete current files after 30 days
+        NoncurrentVersionExpirationInDays: 30 # Delete noncurrent file versions after 30 days
+        Filter:
+          Prefix: "" # Apply to all objects in the bucket
+  eBookingsTempFileBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+      LifecycleConfiguration:
+        Rules:
+        - Id: A1tempBucketDeleteAfter30Days
+          Status: Enabled
+          ExpirationInDays: !Sub "{{resolve:ssm:/${EnvPrefix}/a1/tempbucket/retentionperiod}}"
+  eBookingsErrorFileBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub seil-${EnvPrefix}-ebookings-error-file
+  SEILConfigBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub seil-${EnvPrefix}-config
+  eBookingsEventReceiverFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/ebooking_event_receiver/
+      Handler: a1_eBooking_file_event_receiver_function.lambda_handler
+      Runtime: python3.13
+      Timeout: 900
+      Architectures:
+      - x86_64
+      Events:
+        FileUpload:
+          Type: S3
+          Properties:
+            Bucket: !Ref eBookingsFileBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                - Name: suffix
+                  Value: .zip
+      Environment:
+        Variables:
+          EBOOKING_PARSE_BRQ_ENGINE_ARN: !GetAtt eBookingHeaderProcessingStateMachine.Arn
+          ARN_BRQ_FILE_PROCESSOR_SERVICE: !GetAtt ParseBRQFileFunction.Arn
+          EBOOKINGS_S3_FILEIN_BUCKET: !Sub seil-${EnvPrefix}-ebookings-file-in
+          EBOOKINGS_S3_TEMP_BUCKET: !Ref eBookingsTempFileBucket
+          LQS_PUBLISHER_FUNCTION: !Sub "{{resolve:ssm:/${EnvPrefix}/lambda-arn/lhm-publishqueue}}"
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Action: s3:GetObject*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - lambda:InvokeFunction
+          Resource: !GetAtt ParseBRQFileFunction.Arn
+      - LambdaInvokePolicy:
+          FunctionName: !Sub "{{resolve:ssm:/${EnvPrefix}/lambda-arn/lhm-publishqueue}}"
+
+  eBookingHeaderProcessingStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ${EnvPrefix}-a1-ebooking-header-processing
+      DefinitionSubstitutions:
+        ParseBRQFileFunctionArn: !GetAtt ParseBRQFileFunction.Arn
+        ValidateBRQFileFunctionArn: !GetAtt ValidateBRQFileFunction.Arn
+        CreateSfOppFunctionArn: !GetAtt CreateSfOppFunction.Arn
+      Policies:
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ParseBRQFileFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ValidateBRQFileFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref CreateSfOppFunction
+      DefinitionUri: statemachine/a1_ebooking_header_processing.asl.json
+  ParseBRQFileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.brq_file_parser.parse_brq_file.lambda_handler
+      Runtime: python3.13
+      Timeout: 900
+      MemorySize: 1024
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          ARN_VALIDATION_ENGINE_SERVICE: !GetAtt eBookingBRQValidationEngineStateMachine.Arn
+          EBOOKINGS_S3_FILEIN_BUCKET: !Sub seil-${EnvPrefix}-ebookings-file-in
+          EBOOKINGS_S3_TEMP_BUCKET: !Ref eBookingsTempFileBucket
+          EBOOKINGS_S3_ERROR_BUCKET: !Ref eBookingsErrorFileBucket
+          SF_RECORD_TYPE_NAME: !Sub /${EnvPrefix}/a1/sf/recordtypename
+          SF_PARENT_RECORD_TYPE_NAME: !Sub /${EnvPrefix}/a1/sf/parentrecordtypename
+          SEIL_CONFIG_BUCKET_NAME: !Sub seil-${EnvPrefix}-config
+          EBOOKING_VALIDATION_ENGINE_ARN: !GetAtt eBookingBRQValidationEngineStateMachine.Arn
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-config/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-config
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - lambda:InvokeFunction
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - states:StartExecution
+          Resource: !GetAtt eBookingBRQValidationEngineStateMachine.Arn
+        - Effect: Allow
+          Action:
+          - states:DescribeExecution
+          - states:StopExecution
+          Resource: !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - states:StartExecution
+          Resource: !Sub "{{resolve:ssm:/${EnvPrefix}/cee/requestReceiverARN}}"
+        - Effect: Allow
+          Action:
+          - states:DescribeExecution
+          - states:StopExecution
+          Resource: !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:*
+  ValidateBRQFileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.brq_file_parser.validate_brq_data.lambda_handler
+      Runtime: python3.13
+      Timeout: 900
+      MemorySize: 1024
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          ARN_VALIDATION_ENGINE_SERVICE: !GetAtt eBookingBRQValidationEngineStateMachine.Arn
+          EBOOKINGS_S3_FILEIN_BUCKET: !Sub seil-${EnvPrefix}-ebookings-file-in
+          EBOOKINGS_S3_TEMP_BUCKET: !Ref eBookingsTempFileBucket
+          EBOOKINGS_S3_ERROR_BUCKET: !Ref eBookingsErrorFileBucket
+          SF_RECORD_TYPE_NAME: !Sub /${EnvPrefix}/a1/sf/recordtypename
+          SF_PARENT_RECORD_TYPE_NAME: !Sub /${EnvPrefix}/a1/sf/parentrecordtypename
+          SEIL_CONFIG_BUCKET_NAME: !Sub seil-${EnvPrefix}-config
+          EBOOKING_VALIDATION_ENGINE_ARN: !GetAtt eBookingBRQValidationEngineStateMachine.Arn
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-config/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-config
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - lambda:InvokeFunction
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - states:StartExecution
+          Resource: !GetAtt eBookingBRQValidationEngineStateMachine.Arn
+        - Effect: Allow
+          Action:
+          - states:DescribeExecution
+          - states:StopExecution
+          Resource: !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - states:StartExecution
+          Resource: !Sub "{{resolve:ssm:/${EnvPrefix}/cee/requestReceiverARN}}"
+        - Effect: Allow
+          Action:
+          - states:DescribeExecution
+          - states:StopExecution
+          Resource: !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:*
+  CreateSfOppFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.brq_file_parser.create_sf_opp.lambda_handler
+      Runtime: python3.13
+      Timeout: 900
+      MemorySize: 1024
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          ARN_VALIDATION_ENGINE_SERVICE: !GetAtt eBookingBRQValidationEngineStateMachine.Arn
+          EBOOKINGS_S3_FILEIN_BUCKET: !Sub seil-${EnvPrefix}-ebookings-file-in
+          EBOOKINGS_S3_TEMP_BUCKET: !Ref eBookingsTempFileBucket
+          EBOOKINGS_S3_ERROR_BUCKET: !Ref eBookingsErrorFileBucket
+          SF_RECORD_TYPE_NAME: !Sub /${EnvPrefix}/a1/sf/recordtypename
+          SF_PARENT_RECORD_TYPE_NAME: !Sub /${EnvPrefix}/a1/sf/parentrecordtypename
+          SEIL_CONFIG_BUCKET_NAME: !Sub seil-${EnvPrefix}-config
+          EBOOKING_VALIDATION_ENGINE_ARN: !GetAtt eBookingBRQValidationEngineStateMachine.Arn
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-config/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-config
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - lambda:InvokeFunction
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - states:StartExecution
+          Resource: !GetAtt eBookingBRQValidationEngineStateMachine.Arn
+        - Effect: Allow
+          Action:
+          - states:DescribeExecution
+          - states:StopExecution
+          Resource: !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - states:StartExecution
+          Resource: !Sub "{{resolve:ssm:/${EnvPrefix}/cee/requestReceiverARN}}"
+        - Effect: Allow
+          Action:
+          - states:DescribeExecution
+          - states:StopExecution
+          Resource: !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:*
+  eBookingBRQValidationEngineStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ${EnvPrefix}-a1-ebooking-brq-validation-engine
+      DefinitionSubstitutions:
+        ValBRQFileFormatFunctionArn: !GetAtt ValBRQFileFormatFunction.Arn
+        ValNetworkIdFunctionArn: !GetAtt ValNetworkIdFunction.Arn
+        ValDemoToleranceFunctionArn: !GetAtt ValDemoToleranceFunction.Arn
+        ValBRQRequestIdFunctionArn: !GetAtt ValBRQRequestIdFunction.Arn
+        ValWCDatesFunctionArn: !GetAtt ValWCDatesFunction.Arn
+        ValSFAccountAgencyClientFunctionArn: !GetAtt ValSFAccountAgencyClientFunction.Arn
+        ValSFAccountAdvertiserClientFunctionArn: !GetAtt ValSFAccountAdvertiserClientFunction.Arn
+        ValSFAccountAgencyAdClientFunctionArn: !GetAtt ValSFAccountAgencyAdClientFunction.Arn
+        ValSFAccountDirectClientFunctionArn: !GetAtt ValSFAccountDirectClientFunction.Arn
+        ValLMKProductDateRangeFunctionArn: !GetAtt ValLMKProductDateRangeFunction.Arn
+        ValOppSplitFunctionArn: !GetAtt ValOppSplitFunction.Arn
+        ValLMKProductAdvertiserFunctionArn: !GetAtt ValLMKProductAdvertiserFunction.Arn
+        ValLMKProductAgencyClientFunctionArn: !GetAtt ValLMKProductAgencyClientFunction.Arn
+        ValLMKProductDirectClientFunctionArn: !GetAtt ValLMKProductDirectClientFunction.Arn
+      Policies:
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ValBRQFileFormatFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ValNetworkIdFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ValDemoToleranceFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ValBRQRequestIdFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ValSFAccountAgencyClientFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ValSFAccountAdvertiserClientFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ValSFAccountAgencyAdClientFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ValSFAccountDirectClientFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ValLMKProductDateRangeFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ValLMKProductAdvertiserFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ValLMKProductAgencyClientFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ValLMKProductDirectClientFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ValWCDatesFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ValOppSplitFunction
+      DefinitionUri: statemachine/a1_ebooking_validation_engine.asl.json
+  ValBRQFileFormatFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.validation_engine.validate_file_format.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          EBOOKINGS_S3_TEMP_BUCKET: !Sub seil-${EnvPrefix}-ebookings-temp-file
+          LANDMARK_BASE_URL: !Sub /${EnvPrefix}/landmark/baseurl
+          LANDMARK_ADAPTOR_FUNCTION: !Sub /${EnvPrefix}/lambda-arn/common/lmk-adaptor
+          SPLIT_OPP_THRESHOLD_DATE: !Sub /${EnvPrefix}/a1/splitthresholddate
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Action: s3:GetObject*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          Resource:
+          - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${EnvPrefix}/lambda-arn/common
+          - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${EnvPrefix}/lambda-arn/common/lmk-adaptor
+          - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${EnvPrefix}/landmark/baseurl
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - lambda:InvokeFunction
+          Resource: "*"
+  ValOppSplitFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.validation_engine.validate_brq_split.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          EBOOKINGS_S3_FILEIN_BUCKET: !Sub seil-${EnvPrefix}-ebookings-file-in
+          EBOOKINGS_S3_TEMP_BUCKET: !Ref eBookingsTempFileBucket
+          EBOOKINGS_S3_ERROR_BUCKET: !Ref eBookingsErrorFileBucket
+          SPLIT_OPP_THRESHOLD_DATE: !Sub /${EnvPrefix}/a1/splitthresholddate
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+  ValNetworkIdFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.validation_engine.validate_network_id.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          CEE_NOTIFICATION_ENGINE: !Sub "{{resolve:ssm:/${EnvPrefix}/cee/requestReceiverARN}}"
+          EBOOKINGS_S3_FILEIN_BUCKET: !Sub seil-${EnvPrefix}-ebookings-file-in
+          EBOOKINGS_S3_TEMP_BUCKET: !Ref eBookingsTempFileBucket
+          EBOOKINGS_S3_ERROR_BUCKET: !Ref eBookingsErrorFileBucket
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+      - Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Action:
+          - states:StartExecution
+          Resource: !Sub "{{resolve:ssm:/${EnvPrefix}/cee/requestReceiverARN}}"
+        - Effect: Allow
+          Action:
+          - states:DescribeExecution
+          - states:StopExecution
+          Resource: !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:*
+  ValDemoToleranceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.validation_engine.validate_demo_tolerance.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          CEE_NOTIFICATION_ENGINE: !Sub "{{resolve:ssm:/${EnvPrefix}/cee/requestReceiverARN}}"
+          DEMO_TOLERANCE_PERCENTAGE: !Sub /${EnvPrefix}/a1/demotolerancevalue
+          EBOOKINGS_S3_FILEIN_BUCKET: !Sub seil-${EnvPrefix}-ebookings-file-in
+          EBOOKINGS_S3_TEMP_BUCKET: !Ref eBookingsTempFileBucket
+          EBOOKINGS_S3_ERROR_BUCKET: !Ref eBookingsErrorFileBucket
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - states:StartExecution
+          Resource: !Sub "{{resolve:ssm:/${EnvPrefix}/cee/requestReceiverARN}}"
+        - Effect: Allow
+          Action:
+          - states:DescribeExecution
+          - states:StopExecution
+          Resource: !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:*
+  ValBRQRequestIdFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.validation_engine.validate_brq_request_id.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          CEE_NOTIFICATION_ENGINE: !Sub "{{resolve:ssm:/${EnvPrefix}/cee/requestReceiverARN}}"
+          EBOOKINGS_S3_FILEIN_BUCKET: !Sub seil-${EnvPrefix}-ebookings-file-in
+          EBOOKINGS_S3_TEMP_BUCKET: !Ref eBookingsTempFileBucket
+          EBOOKINGS_S3_ERROR_BUCKET: !Ref eBookingsErrorFileBucket
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+        - Effect: Allow
+          Action: s3:GetObject*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-config/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+      - S3ReadPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-config
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+      - Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Action:
+          - states:StartExecution
+          Resource: !Sub "{{resolve:ssm:/${EnvPrefix}/cee/requestReceiverARN}}"
+        - Effect: Allow
+          Action:
+          - states:DescribeExecution
+          - states:StopExecution
+          Resource: !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:*
+  ValWCDatesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.validation_engine.validate_brq_wcdates.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          CEE_NOTIFICATION_ENGINE: !Sub "{{resolve:ssm:/${EnvPrefix}/cee/requestReceiverARN}}"
+          EBOOKINGS_S3_FILEIN_BUCKET: !Sub seil-${EnvPrefix}-ebookings-file-in
+          EBOOKINGS_S3_TEMP_BUCKET: !Ref eBookingsTempFileBucket
+          EBOOKINGS_S3_ERROR_BUCKET: !Ref eBookingsErrorFileBucket
+      Policies:
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+      - Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Action:
+          - states:StartExecution
+          Resource: !Sub "{{resolve:ssm:/${EnvPrefix}/cee/requestReceiverARN}}"
+        - Effect: Allow
+          Action:
+          - states:DescribeExecution
+          - states:StopExecution
+          Resource: !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:*
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+  ValSFAccountAgencyClientFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.validation_engine.validate_sf_agency_client.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          EBOOKINGS_S3_FILEIN_BUCKET: !Sub seil-${EnvPrefix}-ebookings-file-in
+          EBOOKINGS_S3_TEMP_BUCKET: !Ref eBookingsTempFileBucket
+          EBOOKINGS_S3_ERROR_BUCKET: !Ref eBookingsErrorFileBucket
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+      - S3ReadPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-config
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+  ValSFAccountAdvertiserClientFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.validation_engine.validate_sf_agency_ad_client.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          EBOOKINGS_S3_FILEIN_BUCKET: !Sub seil-${EnvPrefix}-ebookings-file-in
+          EBOOKINGS_S3_TEMP_BUCKET: !Ref eBookingsTempFileBucket
+          EBOOKINGS_S3_ERROR_BUCKET: !Ref eBookingsErrorFileBucket
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+      - S3ReadPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-config
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+  ValSFAccountAgencyAdClientFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.validation_engine.validate_sf_b2b_client.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          EBOOKINGS_S3_FILEIN_BUCKET: !Sub seil-${EnvPrefix}-ebookings-file-in
+          EBOOKINGS_S3_TEMP_BUCKET: !Ref eBookingsTempFileBucket
+          EBOOKINGS_S3_ERROR_BUCKET: !Ref eBookingsErrorFileBucket
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+      - S3ReadPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-config
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+  ValSFAccountDirectClientFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.validation_engine.validate_sf_direct_client.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          EBOOKINGS_S3_FILEIN_BUCKET: !Sub seil-${EnvPrefix}-ebookings-file-in
+          EBOOKINGS_S3_TEMP_BUCKET: !Ref eBookingsTempFileBucket
+          EBOOKINGS_S3_ERROR_BUCKET: !Ref eBookingsErrorFileBucket
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+      - S3ReadPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-config
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+  ValLMKProductDateRangeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.validation_engine.validate_product_date_range.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          EBOOKINGS_S3_TEMP_BUCKET: !Sub seil-${EnvPrefix}-ebookings-temp-file
+          LANDMARK_BASE_URL: !Sub /${EnvPrefix}/landmark/baseurl
+          LANDMARK_ADAPTOR_FUNCTION: !Sub /${EnvPrefix}/lambda-arn/common/lmk-adaptor
+          LANDMARK_INTERFACE_NUMBER: !Sub "{{resolve:ssm:/${EnvPrefix}/a1/lmkinterfaceno}}"
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+      - S3ReadPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-config
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          Resource:
+          - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${EnvPrefix}/lambda-arn/common
+          - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${EnvPrefix}/lambda-arn/common/lmk-adaptor
+          - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${EnvPrefix}/landmark/baseurl
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - lambda:InvokeFunction
+          Resource: "*"
+  ValLMKProductAdvertiserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.validation_engine.validate_product_advertiser.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+      - S3ReadPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-config
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+  ValLMKProductAgencyClientFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.validation_engine.validate_product_agency_client.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+      - S3ReadPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-config
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+  ValLMKProductDirectClientFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.validation_engine.validate_product_direct_client.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Policies:
+      - Version: 2012-10-17
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:CreateLogGroup"
+          - "logs:DescribeLogGroups"
+          - "logs:CreateLogStream"
+          - "logs:DescribeLogStreams"
+          - "logs:PutLogEvents"
+          - "logs:GetLogEvents"
+          Resource: "*"
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+        - Effect: Allow
+          Action:
+          - s3:*
+          - s3:ListBucket
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in/*
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+        - Effect: Allow
+          Action: s3:*
+          Resource: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-error-file/*
+      - S3FullAccessPolicy:
+          BucketName: !Ref eBookingsTempFileBucket
+      - S3FullAccessPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-file-in
+      - S3ReadPolicy:
+          BucketName: !Sub arn:aws:s3:::seil-${EnvPrefix}-config
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+  EBookingSpotPreprocessingStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ${EnvPrefix}-a1-ebooking-spot-preprocessing
+      DefinitionSubstitutions:
+        GetBRQFileFunctionArn: !GetAtt GetBRQFileFunction.Arn
+        PrepareCampaignHeaderPayloadFunctionArn: !GetAtt PrepareCampaignHeaderPayloadFunction.Arn
+        PrepareSpotPayloadFunctionArn: !GetAtt PrepareSpotPayloadFunction.Arn
+        PushToLQSFunctionArn: !GetAtt PushToLQSFunction.Arn
+      Policies:
+      - LambdaInvokePolicy:
+          FunctionName: !Ref GetBRQFileFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref PrepareCampaignHeaderPayloadFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref PrepareSpotPayloadFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref PushToLQSFunction
+      DefinitionUri: statemachine/ebooking_spot_preprocessing.asl.json
+  EBookingSpotPreprocessingStateMachineEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${EnvPrefix}-ebooking-spot-prebooking-rule
+      Description: Event Bus Rule to trigger the EBooking Spot Preprocessing State Machine
+      EventBusName: !Sub "{{resolve:ssm:/${EnvPrefix}/arn/event-bus/seil-internal-event-bus-arn}}"
+      State: ENABLED
+      EventPattern:
+        source:
+        - seil.landmark.campaign.created
+        detail:
+          sf_payload:
+            sf:
+              recordTypeDeveloperName:
+              - Broadcast_Fixed_E_Booking
+      Targets:
+      - Arn: !GetAtt EBookingSpotPreprocessingStateMachine.Arn
+        Id: EBookingSpotPreprocessingStateMachine
+        RoleArn: !GetAtt InvokeStateMachineIamRole.Arn
+  InvokeStateMachineIamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - events.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName: A12InvokeSpotPreprocessingStateMachine
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Effect: Allow
+            Action:
+            - states:ListStateMachines
+            - states:ListActivities
+            - states:DescribeStateMachine
+            - states:DescribeStateMachineForExecution
+            - states:ListExecutions
+            - states:DescribeExecution
+            - states:GetExecutionHistory
+            - states:DescribeActivity
+            - states:StartExecution
+            - states:StopExecution
+            Resource: !GetAtt EBookingSpotPreprocessingStateMachine.Arn
+  EBookingSpotProcessingStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ${EnvPrefix}-a1-ebooking-spot-processing
+      DefinitionSubstitutions:
+        TaskintegrationJobSpotsPreBookingFunctionArn: !GetAtt TaskintegrationJobSpotsPreBookingFunction.Arn
+        TaskintegrationJobCampaignHeaderCreationFunctionArn: !GetAtt TaskintegrationJobCampaignHeaderCreationFunction.Arn
+        UpdateCampaignHeaderFunctionArn: !GetAtt UpdateCampaignHeaderFunction.Arn
+        CallSpotPrebookingFunctionArn: !GetAtt CallSpotPrebookingFunction.Arn
+        ResultReportGeneratorFunctionArn: !GetAtt ResultReportGeneratorFunction.Arn
+        CreateTaskUpdateOpportunityFunctionArn: !GetAtt CreateTaskUpdateOpportunityFunction.Arn
+        UploadReportToTaskAndOpportunityFunctionArn: !GetAtt UploadReportToTaskAndOpportunityFunction.Arn
+        ReportFailedFunctionArn: !GetAtt ReportFailedFunction.Arn
+        CheckS3FilesFunctionArn: !GetAtt CheckS3FilesFunction.Arn
+      Policies:
+      - LambdaInvokePolicy:
+          FunctionName: !Ref TaskintegrationJobSpotsPreBookingFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref TaskintegrationJobCampaignHeaderCreationFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref UpdateCampaignHeaderFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref CallSpotPrebookingFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ResultReportGeneratorFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref CreateTaskUpdateOpportunityFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref UploadReportToTaskAndOpportunityFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ReportFailedFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref CheckS3FilesFunction
+      DefinitionUri: statemachine/ebooking_spot_processing.asl.json
+  CheckS3FilesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.a1_2.check_s3_files.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Policies:
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:ListBucket
+          - s3:GetObject
+          - s3:PutObject
+          - s3:DeleteObject
+          Resource:
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file
+          - !Sub arn:aws:s3:::seil-${EnvPrefix}-ebookings-temp-file/*
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+  GetBRQFileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.a1_2.get_brq_file.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Policies:
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+      - S3WritePolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+  PrepareCampaignHeaderPayloadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.a1_2.prepare_campaign_header_payload.lambda_handler
+      MemorySize: 1024
+      Environment:
+        Variables:
+          LMK_DAYPART_ID: !Sub /${EnvPrefix}/a1/lmkdaypartid
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Policies:
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+      - S3WritePolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-config
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+  TaskintegrationJobCampaignHeaderCreationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.a1_2.task_integration_job_campaign_header_creation.lambda_handler
+      MemorySize: 1024
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Policies:
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+      - S3WritePolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-config
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+
+  TaskintegrationJobSpotsPreBookingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.a1_2.task_integration_job_spots_prebooking_api.update_int_job_spots_loading
+      MemorySize: 1024
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Policies:
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+      - S3WritePolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-config
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+
+  PushToLQSFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.a1_2.push_to_lqs.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          EBOOKING_SPOT_PROCESSING_STATEMACHINE: !GetAtt EBookingSpotProcessingStateMachine.Arn
+          LQS_PUBLISHER_FUNCTION: !Sub "{{resolve:ssm:/${EnvPrefix}/lambda-arn/lhm-publishqueue}}"
+      Policies:
+      - LambdaInvokePolicy:
+          FunctionName: !Sub "{{resolve:ssm:/${EnvPrefix}/lambda-arn/lhm-publishqueue}}"
+  PrepareSpotPayloadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.a1_2.prepare_spot_payload.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          SPOT_HANDLING_LIMIT: !Sub /${EnvPrefix}/a1/ebooking-spot-handling-limit
+      Policies:
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+      - S3WritePolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-config
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+  UpdateCampaignHeaderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.a1_2.update_campaign_header.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          LANDMARK_ADAPTOR: !Ref VarLMKAdaptor
+      Policies:
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarLMKAdaptor
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+      - S3WritePolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+  CallSpotPrebookingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.a1_2.call_spot_prebooking.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Environment:
+        Variables:
+          LANDMARK_ADAPTOR: !Ref VarLMKAdaptor
+      Policies:
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarLMKAdaptor
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+      - S3WritePolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+      - Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:DescribeParameters
+          Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+  ResultReportGeneratorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.a1_2.generate_result_report.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Policies:
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+      - S3WritePolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+  CreateTaskUpdateOpportunityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.a1_2.create_task_update_opportunity.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Policies:
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+      - S3ReadPolicy:
+          BucketName: !Sub seil-${EnvPrefix}-ebookings-temp-file
+  UploadReportToTaskAndOpportunityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: null
+      Handler: functions.a1_2.upload_report_to_task_opportunity.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Policies:
+      - LambdaInvokePolicy:
+          FunctionName: !Ref VarSalesforceAdaptor
+  ReportFailedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: functions.a1_2.report_failed.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+Outputs:
+  EBookingSpotPreprocessingStateMachineArn:
+    Description: EBooking Spot Preprocessing State machine ARN
+    Value: !Ref EBookingSpotPreprocessingStateMachine
+  EBookingSpotPreprocessingStateMachineRoleArn:
+    Description: IAM Role created for EBooking Spot Preprocessing State machine based on the specified SAM Policy Templates
+    Value: !GetAtt EBookingSpotPreprocessingStateMachineRole.Arn
+  EBookingSpotProcessingStateMachineArn:
+    Description: EBooking Spot Processing State machine ARN
+    Value: !Ref EBookingSpotProcessingStateMachine
+  EBookingSpotProcessingStateMachineRoleArn:
+    Description: IAM Role created for EBooking Spot Processing State machine based on the specified SAM Policy Templates
+    Value: !GetAtt EBookingSpotProcessingStateMachineRole.Arn

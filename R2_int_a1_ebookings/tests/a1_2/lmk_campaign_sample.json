@@ -1,0 +1,107 @@
+{
+    "approvalVersionNumber": 0,
+    "approvalKeyID": 1,
+    "campaignCode": 278,
+    "demographNumber": 4,
+    "dealNumber": 120,
+    "productCode": 38,
+    "revenueBudget": 34556,
+    "deliveryCurrencyCode": 5,
+    "topTailFlag": "SOLUS_ONLY",
+    "numberOfSpots": 0,
+    "period": {
+        "startDate": "2024-01-29T00:00:00",
+        "endDate": "2024-02-02T00:00:00"
+    },
+    "mobilityCode": "",
+    "positionCode": "7ACC23",
+    "organisationCode": "OP",
+    "approvedPositionCode": "7ACC23",
+    "approvedOrganisationCode": "OP",
+    "stationPriceCode": 1,
+    "businessAreaNumber": 5,
+    "currencyCode": "AUD",
+    "automatedBooking": "NONE",
+    "businessTypeDetails": [
+        {
+            "businessTypeNumber": 13,
+            "isPrimaryBusiness": true,
+            "revenueSplit": 100
+        }
+    ],
+    "campaignBreakTypes": [
+        {
+            "breakTypeCode": "CM"
+        }
+    ],
+    "salesAreaOnCampaigns": [
+        {
+            "salesAreaDetails": [
+                {
+                    "salesAreaNumber": 1001,
+                    "isExcluded": false,
+                    "percentageSplit": 100,
+                    "spotsPercentage": 100
+                },
+                {
+                    "salesAreaNumber": 1002,
+                    "isExcluded": false,
+                    "percentageSplit": 0
+                },
+                {
+                    "salesAreaNumber": 1004,
+                    "isExcluded": false,
+                    "percentageSplit": 0
+                },
+                {
+                    "salesAreaNumber": 1003,
+                    "isExcluded": false,
+                    "percentageSplit": 0
+                },
+                {
+                    "salesAreaNumber": 1005,
+                    "isExcluded": false,
+                    "percentageSplit": 0
+                }
+            ],
+            "salesAreaNumber": 1000,
+            "percentageSplit": 100,
+            "deliveryCurrencyPricing": {
+                "deliveryCurrencyType": "CPT",
+                "deliveryCurrencyPriceValue": 50
+            },
+            "deliveryLengths": [
+                {
+                    "spotLength": 45,
+                    "percentage": 100
+                }
+            ],
+            "strikeWeights": [
+                {
+                    "period": {
+                        "startDate": "2024-01-29T00:00:00",
+                        "endDate": "2024-02-02T00:00:00"
+                    },
+                    "cpt": 0,
+                    "ratingsPercentage": 100,
+                    "spotsPercentage": 100
+                }
+            ],
+            "dayparts": [
+                {
+                    "percentage": 100,
+                    "daypartNameID": 32,
+                    "timeslices": [
+                        {
+                            "startDay": "Monday",
+                            "endDay": "Sunday",
+                            "startTime": "00:00:00",
+                            "endTime": "99:59:59"
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "salesAreaOnCampaignAsPerDeal": true
+}

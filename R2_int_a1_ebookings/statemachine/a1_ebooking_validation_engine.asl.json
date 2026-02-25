@@ -1,0 +1,122 @@
+{
+    "Comment": "A1 - BRQ validation engine",
+    "StartAt": "Validate File not corrupt",
+    "States": {        
+        "Validate File not corrupt": {
+          "Type": "Task",
+            "Resource": "${ValBRQFileFormatFunctionArn}",
+            "Retry": [],
+            "Next": "File not meant for Seven - Validate BRQ Network ID"
+        },
+        "File not meant for Seven - Validate BRQ Network ID": {
+          "Type": "Task",
+            "Resource": "${ValNetworkIdFunctionArn}",
+            "Retry": [],
+            "Next": "Validate Demo within tolerance"
+        },
+        "Validate Demo within tolerance": {
+          "Type": "Task",
+            "Resource": "${ValDemoToleranceFunctionArn}",
+            "ResultPath": "$",
+            "Retry": [],
+            "Next": "W/C Dates all in the past - Validate WC dates"
+        },
+        "W/C Dates all in the past - Validate WC dates": {
+          "Type": "Task",
+            "Resource": "${ValWCDatesFunctionArn}",
+            "Retry": [],
+            "Next": "Validate BRQ Id duplication on SF"
+        },
+        "Validate BRQ Id duplication on SF": {
+          "Type": "Task",
+            "Resource": "${ValBRQRequestIdFunctionArn}",
+            "ResultPath": "$",
+            "Retry": [],
+            "Next": "Adverstiser client validation"
+        },
+        "Adverstiser client validation": {
+          "Type": "Task",
+            "Resource": "${ValSFAccountAdvertiserClientFunctionArn}",
+            "Retry": [],
+            "Next": "Check SF account type"
+        },
+        "Check SF account type": {
+            "Type": "Choice",
+            "Choices":[
+                {
+                    "Variable": "$.sfAccountType",
+                    "StringEquals": "Agency Client",
+                    "Next": "Agency client validation"
+                },
+                {
+                    "Variable": "$.sfAccountType",
+                    "StringEquals": "Direct Client",
+                    "Next": "If SF Account is Direct Client"
+                }
+            ]
+        },
+        "Agency client validation": {
+            "Type": "Task",
+              "Resource": "${ValSFAccountAgencyClientFunctionArn}",
+              "Retry": [],
+              "Next": "B2B Relationship Validation"
+          },
+        "B2B Relationship Validation": {
+          "Type": "Task",
+            "Resource": "${ValSFAccountAgencyAdClientFunctionArn}",
+            "Retry": [],
+            "Next": "Validate Product exists in LMK within date range"
+        },
+        "If SF Account is Direct Client": {
+          "Type": "Task",
+            "Resource": "${ValSFAccountDirectClientFunctionArn}",
+            "Retry": [],
+            "Next": "Validate Product exists in LMK within date range"
+        },
+        "Validate Product exists in LMK within date range": {
+          "Type": "Task",
+            "Resource": "${ValLMKProductDateRangeFunctionArn}",
+            "Retry": [],
+            "Next": "Validate Product advertiser"
+        },
+        "Validate Product advertiser": {
+          "Type": "Task",
+            "Resource": "${ValLMKProductAdvertiserFunctionArn}",
+            "Retry": [],
+            "Next": "Product-Check SF account type"
+        },
+        "Product-Check SF account type": {
+          "Type": "Choice",
+          "Choices":[
+              {
+                  "Variable": "$.sfAccountType",
+                  "StringEquals": "Agency Client",
+                  "Next": "Validate Product agency client"
+              },
+              {
+                  "Variable": "$.sfAccountType",
+                  "StringEquals": "Direct Client",
+                  "Next": "Validate Product direct client"
+              }
+          ]
+      },
+      "Validate Product agency client": {
+        "Type": "Task",
+          "Resource": "${ValLMKProductAgencyClientFunctionArn}",
+          "Retry": [],
+          "Next": "Validate Opportunity Split"
+      },
+      "Validate Product direct client": {
+        "Type": "Task",
+          "Resource": "${ValLMKProductDirectClientFunctionArn}",
+          "Retry": [],
+          "Next": "Validate Opportunity Split"
+      },
+      "Validate Opportunity Split": {
+        "Type": "Task",
+          "Resource": "${ValOppSplitFunctionArn}",
+          "Retry": [],
+          "End": true
+      }
+    }
+}

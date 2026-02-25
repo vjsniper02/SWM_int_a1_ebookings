@@ -1,0 +1,122 @@
+[
+    {
+        "campaignNumber": 337,
+        "lineNumber": 1,
+        "messages": [
+            {
+                "type": "urn:lmks:bll:23784",
+                "title": "Validation/Save failed",
+                "status": 422,
+                "detail": "Length must match the Campaign length."
+            },
+            {
+                "type": "urn:lmks:bll:23792",
+                "title": "Validation/Save failed",
+                "status": 422,
+                "detail": "Break Sales Area Code does not exists or not valid for Campaign."
+            },
+            {
+                "type": "urn:lmks:bll:23794",
+                "title": "Validation/Save failed",
+                "status": 422,
+                "detail": "Spot Sales Area Code does not exists or not valid for Campaign."
+            }
+        ]
+    },
+    {
+        "campaignNumber": 337,
+        "lineNumber": 2,
+        "messages": [
+            {
+                "type": "urn:lmks:bll:23784",
+                "title": "Validation/Save failed",
+                "status": 422,
+                "detail": "Length must match the Campaign length."
+            },
+            {
+                "type": "urn:lmks:bll:23792",
+                "title": "Validation/Save failed",
+                "status": 422,
+                "detail": "Break Sales Area Code does not exists or not valid for Campaign."
+            },
+            {
+                "type": "urn:lmks:bll:23794",
+                "title": "Validation/Save failed",
+                "status": 422,
+                "detail": "Spot Sales Area Code does not exists or not valid for Campaign."
+            }
+        ]
+    },
+    {
+        "campaignNumber": 337,
+        "lineNumber": 3,
+        "messages": [
+            {
+                "type": "urn:lmks:bll:23784",
+                "title": "Validation/Save successfully",
+                "status": 202,
+                "detail": "Length must match the Campaign length."
+            }
+        ]
+    },
+    {
+        "campaignNumber": 337,
+        "lineNumber": 4,
+        "messages": [
+            {
+                "type": "urn:lmks:bll:23784",
+                "title": "Validation/Save successfully",
+                "status": 202,
+                "detail": "Validation/Save successfully."
+            }
+        ]
+    },
+    {
+        "campaignNumber": 337,
+        "lineNumber": 5,
+        "messages": [
+            {
+                "type": "urn:lmks:bll:23784",
+                "title": "Validation/Save failed",
+                "status": 422,
+                "detail": "Length must match the Campaign length."
+            },
+            {
+                "type": "urn:lmks:bll:23792",
+                "title": "Validation/Save failed",
+                "status": 422,
+                "detail": "Break Sales Area Code does not exists or not valid for Campaign."
+            },
+            {
+                "type": "urn:lmks:bll:23794",
+                "title": "Validation/Save failed",
+                "status": 422,
+                "detail": "Spot Sales Area Code does not exists or not valid for Campaign."
+            }
+        ]
+    },
+    {
+        "campaignNumber": 337,
+        "lineNumber": 6,
+        "messages": [
+            {
+                "type": "urn:lmks:bll:23784",
+                "title": "Validation/Save failed",
+                "status": 422,
+                "detail": "Length must match the Campaign length."
+            },
+            {
+                "type": "urn:lmks:bll:23792",
+                "title": "Validation/Save failed",
+                "status": 422,
+                "detail": "Break Sales Area Code does not exists or not valid for Campaign."
+            },
+            {
+                "type": "urn:lmks:bll:23794",
+                "title": "Validation/Save failed",
+                "status": 422,
+                "detail": "Spot Sales Area Code does not exists or not valid for Campaign."
+            }
+        ]
+    }
+]

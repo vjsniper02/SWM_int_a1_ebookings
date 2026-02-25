@@ -1,0 +1,78 @@
+{
+    "Comment": "B1 - Landmark Account Creation and Update",
+    "StartAt": "Read and Parse BRQ File",
+    "States": {        
+        "Read and Parse BRQ File": {
+          "Type": "Task",
+            "Resource": "${GetBRQFileFunctionArn}",
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 6,
+                "BackoffRate": 2
+              }
+            ],
+            "Next": "Prepare Campaign Header Payload"
+        },
+        "Prepare Campaign Header Payload": {
+          "Type": "Task",
+            "Resource": "${PrepareCampaignHeaderPayloadFunctionArn}",
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 6,
+                "BackoffRate": 2
+              }
+            ],
+            "Next": "Prepare Spot Payload"
+        },
+        "Prepare Spot Payload": {
+          "Type": "Task",
+            "Resource": "${PrepareSpotPayloadFunctionArn}",
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 6,
+                "BackoffRate": 2
+              }
+            ],
+            "Next": "Push to LQS"
+        },
+        "Push to LQS": {
+          "Type": "Task",
+            "Resource": "${PushToLQSFunctionArn}",
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 6,
+                "BackoffRate": 2
+              }
+            ],
+            "End": true
+        }
+    }
+}

@@ -1,0 +1,247 @@
+{
+    "Comment": "B1 - Landmark Account Creation and Update",
+    "StartAt": "Create Integration Job for Update Campaign Header",
+    "States": {
+        "Skip Integration Job Creation Failure": {
+            "Type": "Pass",
+            "Result": "Handled error, continuing...",
+            "Next": "Update Campaign Header"
+        },
+        "Skip Integration Job Update Failure": {
+            "Type": "Pass",
+            "Result": "Handled error, continuing...",
+            "Next": "Is LMK Unavailable"
+        },
+        "Skip Integration Job Creation Failure1": {
+            "Type": "Pass",
+            "Result": "Handled error, continuing...",
+            "Next": "Call Spot Prebooking API"
+        },
+        "Create Integration Job for Update Campaign Header": {
+            "Type": "Task",
+            "Resource": "${TaskintegrationJobCampaignHeaderCreationFunctionArn}",
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                    ],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 6,
+                    "BackoffRate": 2
+                }
+            ],
+            "Catch": [
+                {
+                    "ErrorEquals": [
+                        "States.ALL"
+                    ],
+                    "Next": "Skip Integration Job Creation Failure"
+                }
+            ],
+            "Next": "Update Campaign Header"
+        },
+        "Update Campaign Header": {
+            "Type": "Task",
+            "Resource": "${UpdateCampaignHeaderFunctionArn}",
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                    ],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 6,
+                    "BackoffRate": 2
+                }
+            ],
+            "Next": "Update Itegration Job Status for Update Campaign Header"
+        },
+        "Update Itegration Job Status for Update Campaign Header": {
+            "Type": "Task",
+            "Resource": "${TaskintegrationJobCampaignHeaderCreationFunctionArn}",
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                    ],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 6,
+                    "BackoffRate": 2
+                }
+            ],
+            "Catch": [
+                {
+                    "ErrorEquals": [
+                        "States.ALL"
+                    ],
+                    "Next": "Skip Integration Job Update Failure"
+                }
+            ],
+            "Next": "Is LMK Unavailable"
+        },
+        "Is LMK Unavailable": {
+            "Type": "Choice",
+            "Default": "CheckTranche",
+            "Choices": [
+                {
+                    "Variable": "$.status",
+                    "StringEquals": "failed",
+                    "Next": "Report Failed"
+                },
+                {
+                    "Variable": "$.status",
+                    "StringEquals": "QueueMessage",
+                    "Next": "Queue Message"
+                }
+            ]
+        },
+        "CheckTranche": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Variable": "$.tranche",
+                    "BooleanEquals": true,
+                    "Next": "CheckS3Files"
+                }
+            ],
+            "Default": "Create Integration Job for Call Spot Prebooking"
+        },
+        "Create Integration Job for Call Spot Prebooking": {
+            "Type": "Task",
+            "Resource": "${TaskintegrationJobSpotsPreBookingFunctionArn}",
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                    ],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 6,
+                    "BackoffRate": 2
+                }
+            ],
+            "Catch": [
+                {
+                    "ErrorEquals": [
+                        "States.ALL"
+                    ],
+                    "Next": "Skip Integration Job Creation Failure1"
+                }
+            ],
+            "Next": "Call Spot Prebooking API"
+        },
+        "CheckS3Files": {
+            "Type": "Task",
+            "Resource": "${CheckS3FilesFunctionArn}",
+            "Next": "Create Integration Job for Call Spot Prebooking"
+        },
+        "Call Spot Prebooking API": {
+            "Type": "Task",
+            "Resource": "${CallSpotPrebookingFunctionArn}",
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                    ],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 6,
+                    "BackoffRate": 2
+                }
+            ],
+            "Next": "Is LMK Unavailable 2"
+        },
+        "Is LMK Unavailable 2": {
+            "Type": "Choice",
+            "Default": "Generate Result Report",
+            "Choices": [
+                {
+                    "Variable": "$.status",
+                    "StringEquals": "failed",
+                    "Next": "Report Failed"
+                },
+                {
+                    "Variable": "$.status",
+                    "StringEquals": "QueueMessage",
+                    "Next": "Queue Message"
+                }
+            ]
+        },
+        "Generate Result Report": {
+            "Type": "Task",
+            "Resource": "${ResultReportGeneratorFunctionArn}",
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                    ],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 6,
+                    "BackoffRate": 2
+                }
+            ],
+            "Next": "Create Task and Update Opportunity in Salesforce"
+        },
+        "Create Task and Update Opportunity in Salesforce": {
+            "Type": "Task",
+            "Resource": "${CreateTaskUpdateOpportunityFunctionArn}",
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                    ],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 6,
+                    "BackoffRate": 2
+                }
+            ],
+            "Next": "Upload Report to Task And Opportunity"
+        },
+        "Upload Report to Task And Opportunity": {
+            "Type": "Task",
+            "Resource": "${UploadReportToTaskAndOpportunityFunctionArn}",
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                    ],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 6,
+                    "BackoffRate": 2
+                }
+            ],
+            "End": true
+        },
+        "Report Failed": {
+            "Type": "Task",
+            "Resource": "${ReportFailedFunctionArn}",
+            "End": true
+        },
+        "Queue Message": {
+            "Type": "Pass",
+            "End": true,
+            "ResultPath": "$"
+        }
+    }
+}

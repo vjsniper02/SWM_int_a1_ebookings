@@ -1,0 +1,205 @@
+{
+    "approvalID": 1,
+    "approvalSourceID": 0,
+    "safeMode": false,
+    "campaigns": [
+        {
+            "approvalID": 2795,
+            "approvalVersionNumber": 1,
+            "approvalKeyID": 2795,
+            "campaignCode": 337,
+            "demographNumber": 4,
+            "dealNumber": 118,
+            "productCode": 53,
+            "revenueBudget": 372,
+            "revenueBooked": 0,
+            "deliveryCurrencyCode": 7,
+            "topTailFlag": "SOLUS_ONLY",
+            "numberOfSpots": 100,
+            "payerName": "R2SIT_SPARK FOUNDRY",
+            "period": {
+                "startDate": "2024-02-04T00:00:00",
+                "endDate": "2024-02-10T00:00:00"
+            },
+            "mobilityCode": "",
+            "positionCode": "7ACC23",
+            "organisationCode": "OP",
+            "approvedPositionCode": "7ACC23",
+            "approvedOrganisationCode": "OP",
+            "stationPriceCode": 1,
+            "businessAreaNumber": 5,
+            "currencyCode": "AUD",
+            "automatedBooking": "NONE",
+            "campaignName": "OP2795 R2SIT_Hello Fresh - Broadcast Fixed E-Booki",
+            "approvalStatus": "Approved",
+            "salesAreaOnCampaigns": [
+                {
+                    "salesAreaNumber": "9000",
+                    "percentageSplit": 100,
+                    "deliveryCurrencyPricing": {
+                        "deliveryCurrencyType": "NumberOfSpots",
+                        "deliveryCurrencyPriceValue": 6
+                    },
+                    "salesAreaDetails": [
+                        {
+                            "salesAreaNumber": "9105",
+                            "isExcluded": false,
+                            "percentageSplit": 100,
+                            "spotsPercentage": 100
+                        },
+                        {
+                            "salesAreaNumber": "9001",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9100",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9101",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9102",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9103",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9104",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9106",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9107",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9108",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9200",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9201",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9202",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9300",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9301",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9302",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9303",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9304",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9305",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9306",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9307",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9308",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9400",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9401",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        },
+                        {
+                            "salesAreaNumber": "9402",
+                            "isExcluded": false,
+                            "percentageSplit": 0
+                        }
+                    ],
+                    "deliveryLengths": [
+                        {
+                            "spotLength": 15,
+                            "percentage": 100.0
+                        }
+                    ],
+                    "dayparts": [
+                        {
+                            "percentage": 100,
+                            "daypartNameID": 13,
+                            "timeslices": [
+                                {
+                                    "startDay": "Sunday",
+                                    "endDay": "Saturday",
+                                    "startTime": "00:00:00",
+                                    "endTime": "23:59:59"
+                                }
+                            ]
+                        }
+                    ],
+                    "strikeWeights": [
+                        {
+                            "period": {
+                                "startDate": "2024-02-04",
+                                "endDate": "2024-02-10"
+                            },
+                            "ratingsPercentage": 0,
+                            "spotsPercentage": 100
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

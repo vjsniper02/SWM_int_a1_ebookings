@@ -1,0 +1,212 @@
+trigger: none
+pool:
+  vmImage: ubuntu-latest
+
+parameters:
+- name: env
+  displayName: Environment
+  type: string
+  default: "r2dev"
+  values:
+  - r2dev
+  - r2sit
+  - r2uat
+  - r2train
+  - prod
+
+variables:
+- name: serviceConnection
+  ${{ if in(parameters.env, 'r2dev') }}:
+    value: AwsDev
+  ${{ elseif in(parameters.env, 'r2sit', 'r2uat', 'r2train') }}:
+    value: AwsNonProd
+  ${{ elseif in(parameters.env, 'prod') }}:
+    value: AwsProd
+- name: region
+  value: ap-southeast-2
+- name: ProjPrefix
+  value: swmi
+
+stages:
+- stage: code_check
+  displayName: Code quality check
+  jobs:
+  - job: code_qual_check
+    displayName: Code Quality Check
+    variables:
+    - group: "AWS_INTEGRATION"
+    - name: vsafetyAPIkey
+      value: $[variables.safetyAPIkey]
+    steps:
+    # The tasks below are intentionally disabled to prevent blockers during deployments.
+    # The task involve code formating where the likelihood of encountering issues during deployment is higher.
+    - task: Bash@3
+      name: Black
+      inputs:
+        targetType: "inline"
+        script: |
+          # Run black
+          pip install black
+          echo "Run black..."
+          #python -m black --check .
+
+    - task: AWSShellScript@1
+      displayName: "Sam Validate Lint"
+      inputs:
+        awsCredentials: ${{ variables.serviceConnection }}
+        regionName: ${{ variables.region }}
+        scriptType: "inline"
+        inlineScript: |
+          sam validate --lint --template r2_int_a1_template.yaml
+
+    # The tasks below are intentionally disabled to prevent blockers during deployments.
+    # These two tasks involve Python vulnerabilities assesment where the likelihood of encountering issues during deployment is higher.
+    - task: Bash@3
+      name: Bandit
+      inputs:
+        targetType: "inline"
+        script: |
+          # Run bandit
+          pip install bandit
+          echo "Run bandit..."
+          bandit -c $(System.DefaultWorkingDirectory)/bandit.yaml -r .
+
+    - task: Bash@3
+      name: Safety
+      inputs:
+        targetType: "inline"
+        script: |
+          startfolder=$PWD
+          python -m pip install --upgrade setuptools virtualenv wheel
+          python -m virtualenv $(System.DefaultWorkingDirectory)/venv
+          source $(System.DefaultWorkingDirectory)/venv/bin/activate
+          for file in $( find ${folder} -type f -name "pyproject.toml" ); do
+            echo "Vulnerability check $file"
+            (
+              echo "install poetry"
+              pip install poetry
+              cd $(dirname $(realpath $file))
+              echo "install the required packages"
+              poetry install
+              echo "Safety Check"
+              pip uninstall -y poetry && pip install safety
+              safety --key=$(vsafetyAPIkey) --stage=cicd scan --output json
+            )
+          done
+
+### The tasks below are intentionally disabled because there are currently no unit test cases available, but they are anticipated in the future.
+# - stage: UnitTest
+#   displayName: UnitTest
+#   jobs:
+#     - job: UnitTest
+#       displayName: UnitTest
+#       steps:
+#         - task: AWSShellScript@1
+#           displayName: "UnitTest"
+#           inputs:
+#             awsCredentials: ${{ variables.serviceConnection }}
+#             regionName: ${{ variables.region }}
+#             scriptType: "inline"
+#             inlineScript: |
+#               echo "Unit Test Stage"
+#               pip install poetry pytest
+#               poetry install --no-root # install the dependencies
+#               poetry run pytest -s --show-capture=stdout -vv --cov=functions # run the unit testing and see the coverage report in the "functions" folder
+
+- stage: ${{parameters.env}}_Build
+  displayName: Build and Deploy ${{parameters.env}}
+  jobs:
+  - job: build
+    displayName: Build
+    continueOnError: true
+    steps:
+    - task: UsePythonVersion@0
+      displayName: "Use Python 3.13"
+      inputs:
+        versionSpec: "3.13"
+
+    - task: AWSShellScript@1
+      displayName: "Build SAM"
+      inputs:
+        awsCredentials: ${{ variables.serviceConnection }}
+        regionName: ${{ variables.region }}
+        scriptType: "inline"
+        inlineScript: |
+          # It read the values from SSM
+          LMK_ADAPTOR=$(aws ssm get-parameters --names "/${{ parameters.env }}/lambda-arn/common/lmk-adaptor" \
+            --with-decryption --output text --query 'Parameters[0].Value' --region ${{ variables.region }})
+          SF_ADAPTOR=$(aws ssm get-parameters --names "/${{ parameters.env }}/lambda-arn/common/sf-adaptor" \
+            --with-decryption --output text --query 'Parameters[0].Value' --region ${{ variables.region }})
+
+          #It replaces the ' AWS ENVIRONMENT' based on the chosen environment during pipeline execution, whether it's 'r2dev,' 'r2sit,' or any other environment. It's important not to remove or modify this line.
+          sed -i 's/myenvironment/${{ parameters.env }}/g' r2_int_a1_template.yaml
+          sed -i "s/mylmkadaptor/$LMK_ADAPTOR/g" r2_int_a1_template.yaml
+          sed -i "s/mysfadaptor/$SF_ADAPTOR/g" r2_int_a1_template.yaml
+          sam build --debug --template-file r2_int_a1_template.yaml
+
+    - task: AWSShellScript@1
+      displayName: "Packaging"
+      inputs:
+        awsCredentials: ${{ variables.serviceConnection }}
+        regionName: ${{ variables.region }}
+        scriptType: "inline"
+        inlineScript: |
+          sam package --s3-bucket $(projPrefix)-${{ parameters.env }}-sourcecode \
+          --output-template-file ${{ parameters.env }}_int_a1_packaged.yaml \
+          --s3-prefix ${{ parameters.env }}_int_a1_stack --force-upload
+
+    - task: AWSShellScript@1
+      displayName: "Deployment"
+      inputs:
+        awsCredentials: ${{ variables.serviceConnection }}
+        regionName: ${{ variables.region }}
+        scriptType: "inline"
+        inlineScript: |
+          sam deploy \
+          --template-file ${{ parameters.env }}_int_a1_packaged.yaml \
+          --no-confirm-changeset \
+          --no-fail-on-empty-changeset \
+          --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM  \
+          --stack-name seil-${{ parameters.env }}-a1 \
+          --s3-bucket $(projPrefix)-${{ parameters.env }}-sourcecode \
+          --s3-prefix ${{ parameters.env }}_int-a1_stack \
+          --tags "Int=seil-${{ parameters.env }}-a1" "Env=${{ parameters.env }}"
+
+- stage: versionTag
+  displayName: Set a git tag with the version number
+  jobs:
+  - job: Tag
+    continueOnError: true
+    steps:
+    - checkout: self
+      persistCredentials: true
+
+    - task: gitversion/setup@0
+      displayName: Install GitTools
+      inputs:
+        versionSpec: "5.x"
+        preferLatestVersion: true
+        fetchDepth: 0
+
+    - task: gitversion/execute@0
+      displayName: Calculate SemVer
+      inputs:
+        useConfigFile: true
+        configFilePath: "./GitVersion.yml"
+
+    - script: echo current version is $(GitVersion.SemVer)
+      displayName: "Display calculated version"
+
+    - task: Cmdline@2
+      displayName: Init git global config
+      inputs:
+        script: |
+          git config --global user.email "pipelineuser"
+          git config --global user.name "CI/CD Pipeline"
+
+    - task: CmdLine@2
+      displayName: Create Git Tag for the current version
+      inputs:
+        script: |
+          git tag -a $(GitVersion.SemVer) -m "Tagged version $(GitVersion.SemVer)"
+          git push origin $(GitVersion.SemVer)

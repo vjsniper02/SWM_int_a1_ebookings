@@ -1,0 +1,93 @@
+{
+    "approvalID": 1,
+    "approvalSourceID": 0,
+    "safeMode": false,
+    "campaigns": [
+        {
+            "approvalVersionNumber": 0,
+            "approvalKeyID": 1,
+            "campaignCode": 278,
+            "demographNumber": 4,
+            "dealNumber": 120,
+            "productCode": 38,
+            "revenueBudget": 34556,
+            "deliveryCurrencyCode": 5,
+            "topTailFlag": "SOLUS_ONLY",
+            "numberOfSpots": 0,
+            "period": {
+                "startDate": "2024-01-29T00:00:00",
+                "endDate": "2024-02-02T00:00:00"
+            },
+            "mobilityCode": "",
+            "positionCode": "7ACC23",
+            "organisationCode": "OP",
+            "approvedPositionCode": "7ACC23",
+            "approvedOrganisationCode": "OP",
+            "stationPriceCode": 1,
+            "businessAreaNumber": 5,
+            "currencyCode": "AUD",
+            "automatedBooking": "NONE",
+            "businessTypeDetails": [
+                {
+                    "businessTypeNumber": 13,
+                    "isPrimaryBusiness": true,
+                    "revenueSplit": 100
+                }
+            ],
+            "campaignBreakTypes": [
+                {
+                    "breakTypeCode": "CM"
+                }
+            ],
+            "salesAreaOnCampaigns": [
+                {
+                    "salesAreaNumber": "9103",
+                    "percentageSplit": 100,
+                    "deliveryCurrencyPricing": {
+                        "deliveryCurrencyType": "NumberOfSpots",
+                        "deliveryCurrencyPriceValue": 6
+                    },
+                    "salesAreaDetails": [
+                        {
+                            "salesAreaNumber": "9105",
+                            "isExcluded": false,
+                            "percentageSplit": 100,
+                            "spotsPercentage": 100
+                        }
+                    ],
+                    "deliveryLengths": [
+                        {
+                            "spotLength": 15,
+                            "percentage": 100.0
+                        }
+                    ],
+                    "dayparts": [
+                        {
+                            "percentage": 100,
+                            "daypartNameID": 13,
+                            "timeslices": [
+                                {
+                                    "startDay": "Sunday",
+                                    "endDay": "Saturday",
+                                    "startTime": "00:00:00",
+                                    "endTime": "23:59:59"
+                                }
+                            ]
+                        }
+                    ],
+                    "strikeWeights": [
+                        {
+                            "period": {
+                                "startDate": "2024-01-07",
+                                "endDate": "2024-01-20"
+                            },
+                            "ratingsPercentage": 0,
+                            "spotsPercentage": 100
+                        }
+                    ]
+                }
+            ],
+            "salesAreaOnCampaignAsPerDeal": true
+        }
+    ]
+}

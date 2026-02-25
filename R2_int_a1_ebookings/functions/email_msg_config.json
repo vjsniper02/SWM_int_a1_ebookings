@@ -1,0 +1,41 @@
+{
+    "swmSales":{
+        "checkCorruptFile": {
+            "emailRecipient": "",
+            "subject":"BRQ is corrupt.",
+            "emailContent": "The BRQ sent through is corrupt. Please refer to attached email and follow up with Agency/Direct Client."
+        },
+        "checkBrqMeantForSwm": {
+            "emailRecipient": "",
+            "subject":"BRQ file received is meant for another Network.",
+            "emailContent": "The BRQ file received is meant for another Network. Please refer to attached email and follow up with Agency/Direct Client."
+        },
+        "checkDemo": {
+            "emailRecipient": "",
+            "subject":"BRQ has Spots missing Demo above permitted tolerance.",
+            "emailContent": "The number of spots in the BRQ file missing the demographic is above the permitted tolerance. Please refer to attached email and follow up with Agency/Direct Client. Each spot in the BRQ file should have the primary demographic assigned."
+        },
+        "checkCampaignWcDates": {
+            "emailRecipient": "",
+            "subject":"BRQ File is in the past",
+            "emailContent": "The BRQ sent through contains w/c dates that are all in the past. Please refer to attached email and follow up with Agency/Direct Client."
+        },
+        "checkSfOppDuplication": {
+            "emailRecipient": "",
+            "subject":"BRQ Rejected",
+            "emailContent": "The BRQ file received has the same file name as an Opportunity [Brief ID] that has been sync’d to Landmark or been set to 'Closed Lost'. Please refer to attached email and follow up with Agency/Direct Client."
+        }
+    },
+    "other":{
+        "checkBrqMeantForSwm": {
+            "emailRecipient": "RevManOps@Seven.com.au",
+            "subject":"BRQ file received is meant for another Network.",
+            "emailContent": "The BRQ file received is meant for another Network."
+        },
+        "checkSfOppDuplication": {
+            "emailRecipient": "SalesInsights@Seven.com.au",
+            "subject":"BRQ Rejected",
+            "emailContent": "The BRQ file received has the same file name as an Opportunity [Brief ID] that has been sync’d to Landmark or been set to 'Closed Lost'. Please refer to attached email and identify Sales Patch to notify so that they can follow up with Agency/Direct Client."
+        }
+}
+}

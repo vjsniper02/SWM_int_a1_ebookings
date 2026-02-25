@@ -1,0 +1,11 @@
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "r2-int-a1-ebooking"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-1xjjl9kku9dak"
+s3_prefix = "r2-int-a1-ebooking"
+region = "ap-southeast-2"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+image_repositories = []

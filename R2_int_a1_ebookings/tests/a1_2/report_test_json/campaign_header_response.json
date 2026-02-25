@@ -1,0 +1,19 @@
+{
+    "uploadCampaignResults": [
+        {
+            "approvalKeyID": 2795,
+            "campaignCode": 337,
+            "campaignStatus": "UNCHANGED",
+            "campaignIntendedAction": "NO_ACTION",
+            "messages": []
+        }
+    ],
+    "messages": [
+        {
+            "type": "urn:lmks:web:215",
+            "title": "Validation/Save completed",
+            "status": 200,
+            "detail": "Nothing has been processed."
+        }
+    ]
+}

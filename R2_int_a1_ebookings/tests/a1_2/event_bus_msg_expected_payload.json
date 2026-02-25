@@ -1,0 +1,292 @@
+{
+    "campaigns": [
+      {
+        "approvalID": 2797,
+        "approvalVersionNumber": 1,
+        "approvalKeyID": 2797,
+        "campaignCode": 338,
+        "demographNumber": 1,
+        "dealNumber": 118,
+        "productCode": 53,
+        "revenueBudget": 121,
+        "revenueBooked": 0,
+        "deliveryCurrencyCode": 7,
+        "topTailFlag": "SOLUS_ONLY",
+        "numberOfSpots": 9,
+        "payerName": "R2SIT_SPARK FOUNDRY",
+        "period": {
+          "startDate": "2024-02-02T00:00:00",
+          "endDate": "2024-02-28T00:00:00"
+        },
+        "mobilityCode": "",
+        "positionCode": "7ACC23",
+        "organisationCode": "OP",
+        "approvedPositionCode": "7ACC23",
+        "approvedOrganisationCode": "OP",
+        "stationPriceCode": 1,
+        "businessAreaNumber": 5,
+        "currencyCode": "AUD",
+        "automatedBooking": "NONE",
+        "campaignName": "OP2797 R2SIT_Hello Fresh - Broadcast Fixed Optimis",
+        "approvalStatus": "Approved",
+        "businessTypeDetails": [
+          {
+            "businessTypeNumber": 3,
+            "isPrimaryBusiness": true,
+            "revenueSplit": 100
+          }
+        ],
+        "campaignBreakTypes": [
+          {
+            "breakTypeCode": "CM"
+          }
+        ],
+        "salesAreaOnCampaigns": [
+          {
+            "salesAreaNumber": 1000,
+            "percentageSplit": 33.33,
+            "deliveryCurrencyPricing": {
+              "deliveryCurrencyType": "NumberOfSpots",
+              "deliveryCurrencyPriceValue": 3
+            },
+            "salesAreaDetails": [
+              {
+                "salesAreaNumber": 1001,
+                "isExcluded": false,
+                "percentageSplit": 11.11,
+                "spotsPercentage": 11.11
+              },
+              {
+                "salesAreaNumber": 1002,
+                "isExcluded": false,
+                "percentageSplit": 11.11,
+                "spotsPercentage": 11.11
+              },
+              {
+                "salesAreaNumber": 1003,
+                "isExcluded": false,
+                "percentageSplit": 11.11,
+                "spotsPercentage": 11.11
+              },
+              {
+                "salesAreaNumber": 1004,
+                "isExcluded": false,
+                "percentageSplit": 0
+              },
+              {
+                "salesAreaNumber": 1005,
+                "isExcluded": false,
+                "percentageSplit": 0
+              }
+            ],
+            "deliveryLengths": [
+              {
+                "spotLength": 15,
+                "percentage": 66.66
+              },
+              {
+                "spotLength": 30,
+                "percentage": 33.34
+              }
+            ],
+            "dayparts": [
+              {
+                "percentage": 100,
+                "daypartNameID": "31",
+                "timeslices": [
+                  {
+                    "startDay": "Monday",
+                    "endDay": "Sunday",
+                    "startTime": "00:00:00",
+                    "endTime": "23:59:59"
+                  }
+                ]
+              }
+            ],
+            "strikeWeights": [
+              {
+                "period": {
+                  "startDate": "2024-01-07",
+                  "endDate": "2024-01-13"
+                },
+                "ratingsPercentage": 50,
+                "spotsPercentage": 50
+              },
+              {
+                "period": {
+                  "startDate": "2024-01-14",
+                  "endDate": "2024-01-20"
+                },
+                "ratingsPercentage": 50,
+                "spotsPercentage": 50
+              }
+            ]
+          },
+          {
+            "salesAreaNumber": 2000,
+            "percentageSplit": 33.33,
+            "deliveryCurrencyPricing": {
+              "deliveryCurrencyType": "NumberOfSpots",
+              "deliveryCurrencyPriceValue": 3
+            },
+            "salesAreaDetails": [
+              {
+                "salesAreaNumber": 2001,
+                "isExcluded": false,
+                "percentageSplit": 11.11,
+                "spotsPercentage": 11.11
+              },
+              {
+                "salesAreaNumber": 2002,
+                "isExcluded": false,
+                "percentageSplit": 11.11,
+                "spotsPercentage": 11.11
+              },
+              {
+                "salesAreaNumber": 2003,
+                "isExcluded": false,
+                "percentageSplit": 11.11,
+                "spotsPercentage": 11.11
+              },
+              {
+                "salesAreaNumber": 2004,
+                "isExcluded": false,
+                "percentageSplit": 0
+              },
+              {
+                "salesAreaNumber": 2005,
+                "isExcluded": false,
+                "percentageSplit": 0
+              }
+            ],
+            "deliveryLengths": [
+              {
+                "spotLength": 15,
+                "percentage": 66.66
+              },
+              {
+                "spotLength": 30,
+                "percentage": 33.34
+              }
+            ],
+            "dayparts": [
+              {
+                "percentage": 100,
+                "daypartNameID": "31",
+                "timeslices": [
+                  {
+                    "startDay": "Monday",
+                    "endDay": "Sunday",
+                    "startTime": "00:00:00",
+                    "endTime": "23:59:59"
+                  }
+                ]
+              }
+            ],
+            "strikeWeights": [
+              {
+                "period": {
+                  "startDate": "2024-01-07",
+                  "endDate": "2024-01-13"
+                },
+                "ratingsPercentage": 50,
+                "spotsPercentage": 50
+              },
+              {
+                "period": {
+                  "startDate": "2024-01-14",
+                  "endDate": "2024-01-20"
+                },
+                "ratingsPercentage": 50,
+                "spotsPercentage": 50
+              }
+            ]
+          },
+          {
+            "salesAreaNumber": 3000,
+            "percentageSplit": 33.34,
+            "deliveryCurrencyPricing": {
+              "deliveryCurrencyType": "NumberOfSpots",
+              "deliveryCurrencyPriceValue": 3
+            },
+            "salesAreaDetails": [
+              {
+                "salesAreaNumber": 3001,
+                "isExcluded": false,
+                "percentageSplit": 11.11,
+                "spotsPercentage": 11.11
+              },
+              {
+                "salesAreaNumber": 3002,
+                "isExcluded": false,
+                "percentageSplit": 11.11,
+                "spotsPercentage": 11.11
+              },
+              {
+                "salesAreaNumber": 3003,
+                "isExcluded": false,
+                "percentageSplit": 11.12,
+                "spotsPercentage": 11.12
+              },
+              {
+                "salesAreaNumber": 3004,
+                "isExcluded": false,
+                "percentageSplit": 0
+              },
+              {
+                "salesAreaNumber": 3005,
+                "isExcluded": false,
+                "percentageSplit": 0
+              }
+            ],
+            "deliveryLengths": [
+              {
+                "spotLength": 15,
+                "percentage": 66.66
+              },
+              {
+                "spotLength": 30,
+                "percentage": 33.34
+              }
+            ],
+            "dayparts": [
+              {
+                "percentage": 100,
+                "daypartNameID": "31",
+                "timeslices": [
+                  {
+                    "startDay": "Monday",
+                    "endDay": "Sunday",
+                    "startTime": "00:00:00",
+                    "endTime": "23:59:59"
+                  }
+                ]
+              }
+            ],
+            "strikeWeights": [
+              {
+                "period": {
+                  "startDate": "2024-01-07",
+                  "endDate": "2024-01-13"
+                },
+                "ratingsPercentage": 50,
+                "spotsPercentage": 50
+              },
+              {
+                "period": {
+                  "startDate": "2024-01-14",
+                  "endDate": "2024-01-20"
+                },
+                "ratingsPercentage": 50,
+                "spotsPercentage": 50
+              }
+            ]
+          }
+        ],
+        "salesAreaOnCampaignAsPerPolicy": false,
+        "daypartsAsPerDeal": false
+      }
+    ],
+    "approvalSourceID": 0,
+    "approvalID": 2797
+  }
